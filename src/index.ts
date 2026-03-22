@@ -3,6 +3,9 @@ import { cors } from "hono/cors";
 import { verify, sign } from "hono/jwt";
 import { createClient } from "@supabase/supabase-js";
 import type { AppEnv } from "./types";
+import { rewritePolite } from "./services/AI";
+
+
 
 // Password hashing helper functions
 async function hashPassword(password: string): Promise<string> {
@@ -69,9 +72,17 @@ app.post("/register", async (c) => {
 // Query registered users
 app.get("/users", async (c) => {
   const supabase = c.get("supabase");
+
+  const page = parseInt(c.req.query("page") || "1");
+  const limit = Math.min(parseInt(c.req.query("limit") || "20"), 100);
+  const start = (page - 1) * limit;
+
   const { data, error } = await supabase
     .from("users")
-    .select("user_id, email, username, avatar, bio, created_at");
+    .select("user_id, email, username, avatar, bio, created_at")
+    .range(start, start + limit - 1)
+    .order("created_at", { ascending: false });
+
   if (error) {
     return c.json({ error: error.message }, 500);
   }
@@ -188,7 +199,11 @@ app.get("/protected/posts/:id", async (c) => {
 
 app.get("/posts", async (c) => {
   const supabase = c.get("supabase");
-  
+
+  const page = parseInt(c.req.query("page") || "1");
+  const limit = Math.min(parseInt(c.req.query("limit") || "10"), 50);
+  const start = (page - 1) * limit;
+
   // Join users table to get the author's username
   const { data, error } = await supabase
     .from("posts")
@@ -197,6 +212,7 @@ app.get("/posts", async (c) => {
       users ( username, avatar ),
       post_images ( image_url, position )
     `)
+    .range(start, start + limit - 1)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -223,40 +239,78 @@ app.get("/posts/:id", async (c) => {
   return c.json(data);
 });
 
+app.put("/protected/users/me", async (c) => {
+  const supabase = c.get("supabase");
+  const user = c.get("jwtPayload");
+  const body = await c.req.json();
+  const { avatar, bio } = body;
+
+  let avatarUrl = avatar;
+  
+
+
+  const updates: any = {};
+  if (avatarUrl !== undefined) updates.avatar = avatarUrl;
+  if (bio !== undefined) updates.bio = bio;
+
+  const { data, error } = await supabase
+    .from("users")
+    .update(updates)
+    .eq("user_id", user.userId)
+    .select()
+    .single();
+
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+
+  return c.json(data);
+});
+
+app.post("/rewrite", async (c) => {
+  let { content } = await c.req.json();
+
+  if (content && content.trim() !== "") {
+    try {
+      if (c.env.OPENAI_API_KEY && c.env.OPENAI_BASE_URL) {
+        const rewritten = await rewritePolite(content, c.env.OPENAI_API_KEY, c.env.OPENAI_BASE_URL);
+        if (rewritten) content = rewritten;
+      }
+    } catch (err) {
+      console.error("AIP Error:", err);
+    }
+  }
+
+  return c.json({ data: content });
+});
+
 app.post("/protected/posts", async (c) => {
-  const { content, privacy = "public", image_urls = [] } = await c.req.json();
+  let { content, privacy = "public", image_urls = [] } = await c.req.json();
   const supabase = c.get("supabase");
   const jwtPayload = c.get("jwtPayload");
-  
+
   // 1. Insert Post
   const { data: postData, error: postError } = await supabase
     .from("posts")
-    .insert({ 
-      content, 
-      privacy,
-      user_id: jwtPayload.userId 
-    })
+    .insert({ content, privacy, user_id: jwtPayload.userId })
     .select()
     .single();
-    
+
   if (postError) {
     return c.json({ error: postError.message }, 500);
   }
 
-  // 2. Insert Images (if any)
+  // 2. Upload and Insert Images
   if (image_urls && Array.isArray(image_urls) && image_urls.length > 0) {
-    const imagesToInsert = image_urls.map((url: string, index: number) => ({
-      post_id: postData.post_id,
-      image_url: url,
-      position: index,
-    }));
+    for (let i = 0; i < image_urls.length; i++) {
+      let finalUrl = image_urls[i];
 
-    const { error: imagesError } = await supabase
-      .from("post_images")
-      .insert(imagesToInsert);
-
-    if (imagesError) {
-      console.error("Failed to insert post images:", imagesError);
+      
+      const { error: imagesError } = await supabase
+        .from("post_images")
+        .insert({ post_id: postData.post_id, image_url: finalUrl, position: i });
+        
+      if (imagesError) console.error("Failed to insert post image:", imagesError);
     }
   }
 
@@ -329,10 +383,15 @@ app.get("/posts/:id/comments", async (c) => {
   const { id } = c.req.param();
   const supabase = c.get("supabase");
 
+  const page = parseInt(c.req.query("page") || "1");
+  const limit = Math.min(parseInt(c.req.query("limit") || "20"), 100);
+  const start = (page - 1) * limit;
+
   const { data, error } = await supabase
     .from("comments")
     .select("*")
     .eq("post_id", id)
+    .range(start, start + limit - 1)
     .order("created_at", { ascending: false });
 
   if (error) {

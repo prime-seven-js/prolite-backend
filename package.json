@@ -2,14 +2,15 @@
   "name": "prolite",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --log-level warn",
     "deploy": "wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
     "cors": "^2.8.6",
-    "hono": "^4.12.5"
+    "hono": "^4.12.5",
+    "openai": "^6.32.0"
   },
   "devDependencies": {
     "wrangler": "^4.4.0"

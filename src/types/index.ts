@@ -15,6 +15,8 @@ export type AppBindings = {
   SUPABASE_ANON_KEY: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   JWT_SECRET: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_BASE_URL?: string;
 };
 
 // Khai báo kiểu cho Variables dùng chung trong Hono
