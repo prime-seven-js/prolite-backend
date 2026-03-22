@@ -201,7 +201,7 @@ app.get("/posts", async (c) => {
   const supabase = c.get("supabase");
 
   const page = parseInt(c.req.query("page") || "1");
-  const limit = Math.min(parseInt(c.req.query("limit") || "10"), 50);
+  const limit = Math.min(parseInt(c.req.query("limit") || "100"), 1000);
   const start = (page - 1) * limit;
 
   // Join users table to get the author's username
