@@ -246,7 +246,7 @@ app.put("/protected/users/me", async (c) => {
   const { avatar, bio } = body;
 
   let avatarUrl = avatar;
-  
+
 
 
   const updates: any = {};
@@ -270,6 +270,10 @@ app.put("/protected/users/me", async (c) => {
 app.post("/rewrite", async (c) => {
   let { content } = await c.req.json();
 
+  if (content && content.length > 1000) {
+    return c.json({ error: "Nội dung quá dài" }, 400);
+  }
+
   if (content && content.trim() !== "") {
     try {
       if (c.env.OPENAI_API_KEY && c.env.OPENAI_BASE_URL) {
@@ -289,6 +293,10 @@ app.post("/protected/posts", async (c) => {
   const supabase = c.get("supabase");
   const jwtPayload = c.get("jwtPayload");
 
+  if (content && content.length > 1000) {
+    return c.json({ error: "Nội dung quá dài" }, 400);
+  }
+
   // 1. Insert Post
   const { data: postData, error: postError } = await supabase
     .from("posts")
@@ -305,11 +313,11 @@ app.post("/protected/posts", async (c) => {
     for (let i = 0; i < image_urls.length; i++) {
       let finalUrl = image_urls[i];
 
-      
+
       const { error: imagesError } = await supabase
         .from("post_images")
         .insert({ post_id: postData.post_id, image_url: finalUrl, position: i });
-        
+
       if (imagesError) console.error("Failed to insert post image:", imagesError);
     }
   }
