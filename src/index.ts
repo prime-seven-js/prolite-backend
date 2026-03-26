@@ -5,8 +5,6 @@ import { createClient } from "@supabase/supabase-js";
 import type { AppEnv } from "./types";
 import { rewritePolite } from "./services/AI";
 
-
-
 // Password hashing helper functions
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -31,7 +29,10 @@ app.use("*", cors());
 
 // Middleware to attach Supabase client
 app.use("*", async (c, next) => {
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_ANON_KEY);
+  const supabase = createClient(
+    c.env.SUPABASE_URL,
+    c.env.SUPABASE_SERVICE_ROLE_KEY || c.env.SUPABASE_ANON_KEY,
+  );
   c.set("supabase", supabase);
   await next();
 });
@@ -207,13 +208,15 @@ app.get("/posts", async (c) => {
   // Join users table to get the author's username
   const { data, error } = await supabase
     .from("posts")
-    .select(`
+    .select(
+      `
       *,
       users ( username, avatar ),
       post_images ( image_url, position )
-    `)
+    `,
+    )
     .range(start, start + limit - 1)
-    .order('created_at', { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) {
     return c.json({ error: error.message }, 500);
@@ -226,11 +229,13 @@ app.get("/posts/:id", async (c) => {
   const supabase = c.get("supabase");
   const { data, error } = await supabase
     .from("posts")
-    .select(`
+    .select(
+      `
       *,
       users ( username, avatar ),
       post_images ( image_url, position )
-    `)
+    `,
+    )
     .eq("post_id", id)
     .single();
   if (error) {
@@ -246,8 +251,6 @@ app.put("/protected/users/me", async (c) => {
   const { avatar, bio } = body;
 
   let avatarUrl = avatar;
-
-
 
   const updates: any = {};
   if (avatarUrl !== undefined) updates.avatar = avatarUrl;
@@ -277,7 +280,11 @@ app.post("/rewrite", async (c) => {
   if (content && content.trim() !== "") {
     try {
       if (c.env.OPENAI_API_KEY && c.env.OPENAI_BASE_URL) {
-        const rewritten = await rewritePolite(content, c.env.OPENAI_API_KEY, c.env.OPENAI_BASE_URL);
+        const rewritten = await rewritePolite(
+          content,
+          c.env.OPENAI_API_KEY,
+          c.env.OPENAI_BASE_URL,
+        );
         if (rewritten) content = rewritten;
       }
     } catch (err) {
@@ -313,22 +320,28 @@ app.post("/protected/posts", async (c) => {
     for (let i = 0; i < image_urls.length; i++) {
       let finalUrl = image_urls[i];
 
-
       const { error: imagesError } = await supabase
         .from("post_images")
-        .insert({ post_id: postData.post_id, image_url: finalUrl, position: i });
+        .insert({
+          post_id: postData.post_id,
+          image_url: finalUrl,
+          position: i,
+        });
 
-      if (imagesError) console.error("Failed to insert post image:", imagesError);
+      if (imagesError)
+        console.error("Failed to insert post image:", imagesError);
     }
   }
 
   const { data: hydratedPost, error: hydratedPostError } = await supabase
     .from("posts")
-    .select(`
+    .select(
+      `
       *,
       users ( username, avatar ),
       post_images ( image_url, position )
-    `)
+    `,
+    )
     .eq("post_id", postData.post_id)
     .single();
 
