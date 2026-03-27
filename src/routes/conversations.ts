@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { AppEnv } from "../types";
+import type { AppEnv } from "../ types";
 
 const conversations = new Hono<AppEnv>();
 
@@ -16,11 +16,30 @@ conversations.post("/protected/conversations", async (c) => {
 
   const targetUserId = participantIds[0] as string;
 
-  // Tìm conversation 1-1 đã tồn tại giữa 2 người
+  // Chữ ký duy nhất cho cuộc trò chuyện 1-1
+  const dmKey = [user.userId, targetUserId].sort().join("_");
+
+  // 1. TÌM HỘI THOẠI ĐÃ TỒN TẠI (Giờ ta dùng luôn dm_key siêu nhanh, hoặc fallback logic cho các DM cũ)
+  // Vì có dm_key ở Database, thao tác tìm kiếm đã tồn tại giờ chỉ cần 1 query duy nhất!
+  const { data: existingByKey } = await supabase
+    .from("conversations")
+    .select("conversation_id")
+    .eq("dm_key", dmKey)
+    .single();
+
+  if (existingByKey) {
+    return c.json({
+      message: "Conversation already exists",
+      conversation: { conversation_id: existingByKey.conversation_id },
+    });
+  }
+
+  // --- Fallback tìm DB cũ (những hội thoại tạo trước khi có dm_key) ---
   const { data: myConvs } = await supabase
     .from("conversation_members")
-    .select("conversation_id")
-    .eq("user_id", user.userId);
+    .select("conversation_id, conversations!inner(is_group)")
+    .eq("user_id", user.userId)
+    .eq("conversations.is_group", false);
 
   if (myConvs && myConvs.length > 0) {
     const myConvIds = (myConvs as { conversation_id: string }[]).map(
@@ -34,33 +53,68 @@ conversations.post("/protected/conversations", async (c) => {
       .in("conversation_id", myConvIds);
 
     if (shared && shared.length > 0) {
-      for (const row of shared as { conversation_id: string }[]) {
-        const { data: members } = await supabase
-          .from("conversation_members")
-          .select("user_id")
-          .eq("conversation_id", row.conversation_id);
+      const sharedConvIds = shared.map((s: any) => s.conversation_id);
 
-        // Đây là DM 1-1 (chỉ 2 members) → trả về luôn
-        if (members && members.length === 2) {
-          return c.json({
-            message: "Conversation already exists",
-            conversation: { conversation_id: row.conversation_id },
-          });
+      const { data: allMembers } = await supabase
+        .from("conversation_members")
+        .select("conversation_id, user_id")
+        .in("conversation_id", sharedConvIds);
+
+      if (allMembers) {
+        const convMap = new Map<string, string[]>();
+        for (const m of allMembers) {
+          if (!convMap.has(m.conversation_id)) convMap.set(m.conversation_id, []);
+          const arr = convMap.get(m.conversation_id)!;
+          if (!arr.includes(m.user_id)) arr.push(m.user_id);
+        }
+
+        const targetParticipants = Array.from(new Set([user.userId, targetUserId])).sort();
+
+        for (const [cId, members] of convMap.entries()) {
+          const sortedMembers = [...members].sort();
+          if (
+            sortedMembers.length === targetParticipants.length &&
+            sortedMembers.every((val, index) => val === targetParticipants[index])
+          ) {
+             return c.json({
+               message: "Conversation already exists",
+               conversation: { conversation_id: cId },
+             });
+          }
         }
       }
     }
   }
 
-  // Tạo conversation mới
+  // 2. TẠO MỚI (Database tự động văng lỗi 23505 nếu có người khác đang tạo trùng dm_key ở cùng 1 thời điểm - chặn 100% Race Condition)
   const { data: conv, error: convErr } = await supabase
     .from("conversations")
-    .insert({ is_group: false })
+    .insert({ is_group: false, dm_key: dmKey })
     .select()
     .single();
 
-  if (convErr) return c.json({ error: convErr.message }, 500);
+  if (convErr) {
+    if (convErr.code === "23505" || convErr.message?.includes("unique")) {
+      // Race condition bị Database cản lại. Lấy lại đúng cái hội thoại mà người kia vừa lưu nhanh hơn.
+      const { data: raceExisting } = await supabase
+        .from("conversations")
+        .select("conversation_id")
+        .eq("dm_key", dmKey)
+        .single();
+        
+      if (raceExisting) {
+        return c.json({
+          message: "Conversation already exists",
+          conversation: { conversation_id: raceExisting.conversation_id },
+        });
+      }
+    }
+    return c.json({ error: convErr.message }, 500);
+  }
 
-  const memberInserts = [user.userId, targetUserId].map((uid) => ({
+  // Dùng Set() để nếu userID === targetUserId (chat 1 mình), chỉ insert 1 row
+  const uniqueMemberIds = Array.from(new Set([user.userId, targetUserId]));
+  const memberInserts = uniqueMemberIds.map((uid) => ({
     conversation_id: conv.conversation_id,
     user_id: uid,
   }));
@@ -71,10 +125,10 @@ conversations.post("/protected/conversations", async (c) => {
 
   if (membersErr) return c.json({ error: membersErr.message }, 500);
 
-  // Phát broadcast event báo có conversation mới (Sử dụng httpSend để tránh warning fallback REST của Supabase)
+  // Phát broadcast event báo có conversation mới
   const globalChannel = supabase.channel("conversations-realtime");
-  await (globalChannel as any).httpSend("NEW_CONVERSATION", { 
-    conversation_id: conv.conversation_id 
+  await (globalChannel as any).httpSend("NEW_CONVERSATION", {
+    conversation_id: conv.conversation_id,
   });
 
   return c.json({ message: "Conversation created", conversation: conv });
@@ -95,9 +149,9 @@ conversations.get("/protected/conversations", async (c) => {
   if (myConvsErr) return c.json({ error: myConvsErr.message }, 500);
   if (!myConvs || myConvs.length === 0) return c.json([]);
 
-  const convIds = (
-    myConvs as { conversation_id: string }[]
-  ).map((r) => r.conversation_id);
+  const convIds = (myConvs as { conversation_id: string }[]).map(
+    (r) => r.conversation_id,
+  );
 
   // 2. Lấy tất cả members của các conversations (để resolve participants)
   const { data: allMembers, error: membersErr } = await supabase
@@ -149,20 +203,25 @@ conversations.get("/protected/conversations", async (c) => {
     if (!participantsMap.has(m.conversation_id)) {
       participantsMap.set(m.conversation_id, []);
     }
-    participantsMap.get(m.conversation_id)!.push({
-      user_id: m.user_id,
-      username: m.users?.username ?? "Unknown",
-      avatar: m.users?.avatar,
-    });
+    const currentList = participantsMap.get(m.conversation_id)!;
+    if (!currentList.some((p) => p.user_id === m.user_id)) {
+      currentList.push({
+        user_id: m.user_id,
+        username: m.users?.username ?? "Unknown",
+        avatar: m.users?.avatar,
+      });
+    }
   }
 
   // 4. Compose & sort (mới nhất trước)
-  const enriched = (
-    myConvs as {
-      conversation_id: string;
-      conversations: { is_group: boolean; created_at: string };
-    }[]
-  ).map((row) => ({
+  const uniqueConvsMap = new Map();
+  for (const row of myConvs as any[]) {
+    if (!uniqueConvsMap.has(row.conversation_id)) {
+      uniqueConvsMap.set(row.conversation_id, row);
+    }
+  }
+
+  const enriched = Array.from(uniqueConvsMap.values()).map((row) => ({
     conversation_id: row.conversation_id,
     conversations: row.conversations,
     participants: participantsMap.get(row.conversation_id) ?? [],
@@ -175,7 +234,26 @@ conversations.get("/protected/conversations", async (c) => {
     return tb.localeCompare(ta);
   });
 
-  return c.json(enriched);
+  // 5. Deduplicate 1-1 conversations by the other participant
+  const seen1on1 = new Set<string>();
+  const finalEnriched = [];
+
+  for (const conv of enriched) {
+    if (!conv.conversations?.is_group) {
+      const otherParticipant = conv.participants.find(
+        (p: any) => p.user_id !== user.userId,
+      );
+      const otherId = otherParticipant ? otherParticipant.user_id : user.userId;
+
+      if (seen1on1.has(otherId)) {
+        continue; // Bỏ qua conversation 1-1 bị trùng với người này (chỉ giữ cái mới nhất)
+      }
+      seen1on1.add(otherId);
+    }
+    finalEnriched.push(conv);
+  }
+
+  return c.json(finalEnriched);
 });
 
 // ─── GET /protected/conversations/:id/messages ───────────────────────────────
@@ -214,8 +292,8 @@ conversations.post("/protected/conversations/:id/messages", async (c) => {
 
   // Phát broadcast chung báo có cập nhật message để ConversationList refresh (Dùng httpSend)
   const globalChannel = supabase.channel("conversations-realtime");
-  await (globalChannel as any).httpSend("NEW_MESSAGE", { 
-    conversation_id: id 
+  await (globalChannel as any).httpSend("NEW_MESSAGE", {
+    conversation_id: id,
   });
 
   return c.json(data);
