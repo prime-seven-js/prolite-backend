@@ -5,14 +5,6 @@
   "compatibility_date": "2026-03-05",
 
   "compatibility_flags": ["nodejs_compat"],
-  "vars": {
-    "SUPABASE_URL": "https://ezgwsbdapqbuasodvycb.supabase.co",
-    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6Z3dzYmRhcHFidWFzb2R2eWNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2MzYzOTIsImV4cCI6MjA4NjIxMjM5Mn0.pRKNC3tAGaUbnHtUBw6gSRVui19Y-YSbTsWZgMZl6cY",
-    "OPENAI_API_KEY": "sk-12r1R9wazT4DLq2ms3GVivg3CiWxzJWHhdNVzfMBpGwAUMGm",
-    "OPENAI_BASE_URL": "https://api.yescale.io/v1",
-    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6Z3dzYmRhcHFidWFzb2R2eWNiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDYzNjM5MiwiZXhwIjoyMDg2MjEyMzkyfQ.feJPwu-K-LWSSNL1oG-Ara0liQBrMPvlCmkNHgoHn6s",
-    "JWT_SECRET": "8f5b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
-  },
   // "kv_namespaces": [
   //   {
   //     "binding": "MY_KV_NAMESPACE",
