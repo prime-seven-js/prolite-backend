@@ -1,4 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  type SupabaseClient,
+  type User as SupabaseAuthUser,
+} from "@supabase/supabase-js";
 import { Hono } from "hono";
 import type { AppEnv } from "../types";
 import { adminGuard } from "../middlewares/adminGuard";
@@ -25,6 +29,73 @@ const getAdminSupabase = (c: {
     c.env.SUPABASE_URL,
     c.env.SUPABASE_SERVICE_ROLE_KEY || c.env.SUPABASE_ANON_KEY,
   );
+
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const findAuthUserByEmail = async (
+  supabase: SupabaseClient,
+  email: string,
+): Promise<SupabaseAuthUser | null> => {
+  const normalizedEmail = normalizeEmail(email);
+  const perPage = 200;
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const users = data.users ?? [];
+    const existingUser =
+      users.find(
+        (candidate) => normalizeEmail(candidate.email ?? "") === normalizedEmail,
+      ) ?? null;
+
+    if (existingUser) {
+      return existingUser;
+    }
+
+    if (users.length < perPage) {
+      return null;
+    }
+
+    page += 1;
+  }
+};
+
+const syncSupabaseAuthPassword = async (
+  supabase: SupabaseClient,
+  email: string,
+  password: string,
+) => {
+  const normalizedEmail = normalizeEmail(email);
+  const authUser = await findAuthUserByEmail(supabase, normalizedEmail);
+
+  if (authUser) {
+    const { error } = await supabase.auth.admin.updateUserById(authUser.id, {
+      password,
+      email_confirm: true,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return;
+  }
+
+  const { error } = await supabase.auth.admin.createUser({
+    email: normalizedEmail,
+    password,
+    email_confirm: true,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+};
 
 const getPagination = (c: { req: { query: (key: string) => string | undefined } }) => {
   const page = Math.max(
@@ -62,6 +133,14 @@ const updateUserPassword = async (
 
   const hashedPassword = await hashPassword(newPassword);
   const supabase = getAdminSupabase(c);
+  const { data: existingUser, error: existingUserError } = await supabase
+    .from("users")
+    .select("user_id, email, password")
+    .eq("user_id", id)
+    .maybeSingle();
+
+  if (existingUserError) return c.json({ error: existingUserError.message }, 500);
+  if (!existingUser) return c.json({ error: "User not found" }, 404);
 
   const { data, error } = await supabase
     .from("users")
@@ -72,6 +151,26 @@ const updateUserPassword = async (
 
   if (error) return c.json({ error: error.message }, 500);
   if (!data) return c.json({ error: "User not found" }, 404);
+
+  try {
+    await syncSupabaseAuthPassword(supabase, existingUser.email, newPassword);
+  } catch (authError) {
+    const rollback = await supabase
+      .from("users")
+      .update({ password: existingUser.password })
+      .eq("user_id", id);
+
+    const rollbackMessage = rollback.error
+      ? ` Password rollback failed: ${rollback.error.message}`
+      : "";
+
+    const authMessage =
+      authError instanceof Error
+        ? authError.message
+        : "Failed to sync Supabase Auth password.";
+
+    return c.json({ error: `${authMessage}${rollbackMessage}` }, 500);
+  }
 
   return c.json({ message: "Password reset successful" });
 };
