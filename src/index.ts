@@ -320,13 +320,11 @@ app.post("/protected/posts", async (c) => {
     for (let i = 0; i < image_urls.length; i++) {
       let finalUrl = image_urls[i];
 
-      const { error: imagesError } = await supabase
-        .from("post_images")
-        .insert({
-          post_id: postData.post_id,
-          image_url: finalUrl,
-          position: i,
-        });
+      const { error: imagesError } = await supabase.from("post_images").insert({
+        post_id: postData.post_id,
+        image_url: finalUrl,
+        position: i,
+      });
 
       if (imagesError)
         console.error("Failed to insert post image:", imagesError);
@@ -379,6 +377,7 @@ app.delete("/protected/posts/:id", async (c) => {
 app.post("/protected/posts/:id/comments", async (c) => {
   const { id } = c.req.param();
   const supabase = c.get("supabase");
+  const user = c.get("jwtPayload");
 
   const body = await c.req.json();
   const { content } = body;
@@ -388,13 +387,30 @@ app.post("/protected/posts/:id/comments", async (c) => {
     .insert({
       post_id: id,
       content: content,
-      user_id: c.get("jwtPayload").userId,
+      user_id: user.userId,
     })
     .select()
     .single();
 
   if (error) {
     return c.json({ error: error.message }, 500);
+  }
+
+  // Create notification for post owner (skip if commenting on own post)
+  const { data: post } = await supabase
+    .from("posts")
+    .select("user_id")
+    .eq("post_id", id)
+    .single();
+
+  if (post && post.user_id !== user.userId) {
+    await supabase.from("notifications").insert({
+      user_id: post.user_id,
+      actor_id: user.userId,
+      post_id: id,
+      type: "comment",
+      is_read: false,
+    });
   }
 
   return c.json(data);

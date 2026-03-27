@@ -4,11 +4,8 @@
   "main": "src/api.ts",
   "compatibility_date": "2026-03-05",
 
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+  "compatibility_flags": ["nodejs_compat"],
   // "vars": {
-  //   "MY_VAR": "my-variable"
   // },
   // "kv_namespaces": [
   //   {

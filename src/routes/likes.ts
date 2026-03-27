@@ -32,6 +32,24 @@ likes.post("/protected/posts/:id/like", async (c) => {
       .single();
       
     if (error) return c.json({ error: error.message }, 500);
+
+    // Create notification for post owner (skip if liking own post)
+    const { data: post } = await supabase
+      .from("posts")
+      .select("user_id")
+      .eq("post_id", id)
+      .single();
+
+    if (post && post.user_id !== user.userId) {
+      await supabase.from("notifications").insert({
+        user_id: post.user_id,
+        actor_id: user.userId,
+        post_id: id,
+        type: "like",
+        is_read: false,
+      });
+    }
+
     return c.json({ message: "Post liked", data });
   }
 });

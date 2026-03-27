@@ -10,7 +10,7 @@ notifications.get("/protected/notifications", async (c) => {
 
   const { data, error } = await supabase
     .from("notifications")
-    .select("*")
+    .select("*, actor:users!actor_id(username, avatar)")
     .eq("user_id", user.userId)
     .order("created_at", { ascending: false });
 

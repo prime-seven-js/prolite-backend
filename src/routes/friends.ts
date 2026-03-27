@@ -109,4 +109,18 @@ friends.get("/protected/friends", async (c) => {
   return c.json(formattedFriends);
 });
 
+friends.get("/protected/friends/sent", async (c) => {
+  const supabase = c.get("supabase");
+  const user = c.get("jwtPayload");
+
+  const { data, error } = await supabase
+    .from("friendships")
+    .select("id, created_at, users!addressee_id(user_id, username, avatar)")
+    .eq("requester_id", user.userId)
+    .eq("status", "pending");
+
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json(data);
+});
+
 export default friends;
