@@ -1,12 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "prolite",
+  "name": "prolite-backend",
   "main": "src/api.ts",
   "compatibility_date": "2026-03-05",
 
   "compatibility_flags": ["nodejs_compat"],
-  // "vars": {
-  // },
   // "kv_namespaces": [
   //   {
   //     "binding": "MY_KV_NAMESPACE",
