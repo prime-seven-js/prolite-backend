@@ -152,6 +152,7 @@ app.post("/login", async (c) => {
     userId: user.user_id,
     email: user.email,
     username: user.username,
+    role: user.role ?? "user",
     exp: Math.floor(Date.now() / 1000) + 60 * 60, // 1 hour
   };
 
@@ -163,6 +164,7 @@ app.post("/login", async (c) => {
       userId: payload.userId,
       email: payload.email,
       username: payload.username,
+      role: payload.role,
     },
   });
 });
@@ -204,9 +206,10 @@ app.get("/posts", async (c) => {
   const page = parseInt(c.req.query("page") || "1");
   const limit = Math.min(parseInt(c.req.query("limit") || "100"), 1000);
   const start = (page - 1) * limit;
+  const userId = c.req.query("userId");
 
   // Join users table to get the author's username
-  const { data, error } = await supabase
+  let query = supabase
     .from("posts")
     .select(
       `
@@ -217,6 +220,12 @@ app.get("/posts", async (c) => {
     )
     .range(start, start + limit - 1)
     .order("created_at", { ascending: false });
+
+  if (userId) {
+    query = query.eq("user_id", userId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return c.json({ error: error.message }, 500);
