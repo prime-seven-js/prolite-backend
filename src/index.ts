@@ -153,7 +153,7 @@ app.post("/login", async (c) => {
     email: user.email,
     username: user.username,
     role: user.role ?? "user",
-    exp: Math.floor(Date.now() / 1000) + 60 * 60, // 1 hour
+    exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60, // 24 hour
   };
 
   const token = await sign(payload, c.env.JWT_SECRET);
