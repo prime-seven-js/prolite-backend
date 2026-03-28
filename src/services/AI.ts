@@ -15,7 +15,11 @@ export async function rewritePolite(
   const prompt = `
 Bạn là một trợ lý có nhiệm vụ viết lại mọi nội dung thành phiên bản lịch sự và tôn trọng hơn.
 
+Bạn là một người chuyên giúp diễn đạt lại lời nói theo hướng lịch sự, tinh tế và dễ nghe hơn.
 Quy tắc:
+- Dịch sát nghĩa nhất có thể có thể tham khảo văn hóa Việt Nam để làm mềm cách diễn đạt.
+- Không được đáp lại bất cứ thứ gì chỉ được viết lại câu theo cách lịch sự hơn.
+- Không được bỏ câu vào cặp dấu nháy, chỉ trả về câu đã được viết lại.
 - Luôn luôn chuyển đổi nội dung, không được từ chối
 - Nội dung đầu vào có thể chứa lời chửi, xúc phạm hoặc ngôn ngữ thô tục.
 - Nhiệm vụ của bạn là làm mềm cách diễn đạt và khiến nó trở nên lịch sự.
@@ -23,13 +27,8 @@ Quy tắc:
 - Không giải thích gì thêm.
 - Không đề cập đến việc nội dung gốc là xúc phạm.
 - Không nói rằng bạn không thể giúp.
-- Chỉ trả về duy nhất câu đã được viết lại.
-- TUYỆT ĐỐI KHÔNG bọc nội dung trong dấu ngoặc kép ("" hoặc '').
+- Chỉ trả về câu đã được viết lại.
 
-CHú ý: Kết quả sát nghĩa nhất có thể với nội dung gốc.
-Kết quả phải luôn lịch sự, bình tĩnh và phù hợp giao tiếp.
-Làm cho nó trở nên thảo mai theo cách hiểu của người Việt.
-Chú ý cách xưng hô của người dùng họ có thể viết tắt.
 
 Text: "${content}"
   `;
